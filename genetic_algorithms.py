@@ -25,9 +25,7 @@ class Path:
             self.curve: LineString = LineString()
 
         @staticmethod
-        def build(circles, path1, path2, without=None):
-            if without is None:
-                without = []
+        def build(circles, path1, path2):
             assert path1[-1] is path2[0]
             assert path1[-1].__class__ == Path.CurveWay
 
@@ -77,12 +75,7 @@ class Path:
             self.line = line
 
         @staticmethod
-        def build(circles, start_curve_way, end_curve_way, without=None):
-            if without is None:
-                without = [start_curve_way.circle, end_curve_way.circle]
-            else:
-                without.append(start_curve_way.circle)
-                without.append(end_curve_way.circle)
+        def build(circles, start_curve_way, end_curve_way):
 
             def rotation_to_tangent_rotation(start_rotation, end_rotation):
                 if (start_rotation, end_rotation) == (1, 1) or (start_rotation, end_rotation) == (-1, -1):
@@ -93,25 +86,25 @@ class Path:
             line = tangents_c_c(start_curve_way.circle, end_curve_way.circle,
                                 rotation_to_tangent_rotation(start_curve_way.rotation, end_curve_way.rotation))
             crossed_circle = Path.StraightWay.get_intersected_neigbour(circles, line.points[0],
-                                                                       line.points[1], without=without)
+                                                                       line.points[1], without=[start_curve_way.circle,
+                                                                                                end_curve_way.circle])
 
             if crossed_circle:
                 crossed_curve_way = Path.CurveWay(crossed_circle)
-                path1 = Path.StraightWay.build(circles, start_curve_way, crossed_curve_way, without=without)
-                path2 = Path.StraightWay.build(circles, crossed_curve_way, end_curve_way, without=without)
-                return Path.CurveWay.build(circles, path1, path2, without=without)
+                path1 = Path.StraightWay.build(circles, start_curve_way, crossed_curve_way)
+                path2 = Path.StraightWay.build(circles, crossed_curve_way, end_curve_way)
+                return Path.CurveWay.build(circles, path1, path2)
             else:
                 return [start_curve_way, Path.StraightWay(line), end_curve_way]
 
         @staticmethod
-        def build_through_circle(circles, start_curve_way, end_curve_way, through_circle, without=None):
+        def build_through_circle(circles, start_curve_way, end_curve_way, through_circle):
             through_way = Path.CurveWay(through_circle)
-            if not without:
-                without = []
             return Path.CurveWay.build(circles,
-                                       Path.StraightWay.build(circles, start_curve_way, through_way, without),
-                                       Path.StraightWay.build(circles, through_way, end_curve_way, without))
+                                       Path.StraightWay.build(circles, start_curve_way, through_way),
+                                       Path.StraightWay.build(circles, through_way, end_curve_way))
 
+        # TODO оптимизировать функцию поиска соседей
         @staticmethod
         def get_intersected_neigbour(circles: [Circle], start_point: Point, end_point: Point, without=None):
             if without is None:
@@ -147,7 +140,7 @@ class Path:
             return None
         try:
             gap = randrange(2, min(len(self.value), len(other.value)) - 2, 2)
-        except(ValueError):
+        except ValueError:
             return None
         if self.value[gap].circle.equals(other.value[gap + 2].circle):
             return None
@@ -161,7 +154,7 @@ class Path:
     def mutation(self):
         try:
             point = randrange(2, len(self.value) - 1, 2)
-        except(ValueError):
+        except ValueError:
             return
         circle = choice(self.circles)
         if circle.equals(self.value[point + 2].circle) or circle.equals(self.value[point - 2].circle):
@@ -175,6 +168,8 @@ class Path:
 
 class PathFinder:
     def __init__(self, input_data, size_generation=50, mutation_possibility=0.2, fitness_function=None):
+        self.best_path = None
+
         def default_fitness_function(path: Path):
             max_line = 0
             accum_curve = 0
@@ -229,6 +224,8 @@ class PathFinder:
             return
         min_fitness = float("+inf")
         count_min_fitness = 0
+        best_path = None
+        count_void_evolution = 0
         for i in range(n_steps):
 
             self.reproduction()
@@ -243,12 +240,12 @@ class PathFinder:
             else:
                 count_min_fitness = 0
 
+            count_void_evolution +=1
+
             if min_fitness > best_fitness_in_step:
                 min_fitness = best_fitness_in_step
+                self.best_path = self.paths[0]
+                count_void_evolution = 0
 
-            if count_min_fitness == 10:
+            if count_min_fitness == 10 or count_void_evolution == 30:
                 break
-
-            last_fitness = self.fitness_function(self.paths[0])
-
-# TODO откалибровать without, кажется он виновен в перечесении с окружностью, сделать нормальные функцию поиска соседей
